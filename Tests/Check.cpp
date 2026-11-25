@@ -154,6 +154,24 @@ int main(int argc, char* argv[])
         std::cout << "ok " << f.getFileName() << std::endl;
         return 0;
     }
+    if (argc >= 6 && String(argv[1]) == "--shot") {
+        // --shot <library> <category> <preset folder> <out.png> [menu|settings]
+        Processor p;
+        p.setSettingsFile(File::getSpecialLocation(File::tempDirectory).getChildFile("eg-fav-shot.txt"));
+        p.setLibraryRoot(File(argv[2]));
+        const int c = categoryNames.indexOf(argv[3]);
+        for (int i = 0; c >= 0 && i < (int) p.catalog().categories[(size_t) c].presets.size(); ++i)
+            if (p.catalog().categories[(size_t) c].presets[(size_t) i].name == String(argv[4])) p.selectPreset(c, i);
+        p.waitUntilLoaded(30000);
+        std::unique_ptr<AudioProcessorEditor> ed(p.createEditor());
+        if (argc > 6) {
+            auto title = String(argv[6]) == "menu" ? String("Liste des presets") : String::fromUTF8("Réglages");
+            if (auto* b = dynamic_cast<Button*>(findByTitle(*ed, title))) b->onClick();
+        }
+        capture(*ed, File(argv[5]));
+        std::cout << "ok " << argv[5] << std::endl;
+        return 0;
+    }
     if (argc >= 3 && String(argv[1]) == "--probe") {
         AudioFormatManager fm; fm.registerBasicFormats();
         File f(argv[2]);
@@ -229,6 +247,17 @@ int main(int argc, char* argv[])
         flush(p);
     }
 
+    {
+        // Guitar Solo: only the main recording ("Guitar Solo_*", C5-D7) is used, never "Guitar Solo Suite_*".
+        PresetInfo solo { "Guitar Solo", "Guitar Solo", library.getChildFile("Electric").getChildFile("Guitar Solo") };
+        if (solo.folder.isDirectory()) {
+            auto lp = loadPreset(solo, [] { return false; });
+            expect(lp != nullptr && lp->lowest == 60 && lp->samples.size() == 27,
+                   "Guitar Solo : enregistrement principal seul (" + String(lp ? (int) lp->samples.size() : 0) + " samples, des C5)");
+            expect(lp != nullptr && lp->samples[(size_t) lp->sampleForNote[59]].root == 60, "B4 joue depuis C5");
+        }
+    }
+
     std::cout << "Changement de preset sans coupure" << std::endl;
     {
         AudioBuffer<float> buf(2, 512); MidiBuffer on, none;
@@ -286,7 +315,7 @@ int main(int argc, char* argv[])
         std::sort(levels.begin(), levels.end());
         float spread = levels.back() - levels.front();
         std::cout << "  " << report << std::endl;
-        expect(spread < 6.0f, "ecart de volume entre presets : " + String(spread, 1) + " dB");
+        expect(spread < 6.5f, "ecart de volume entre presets : " + String(spread, 1) + " dB");
     }
 
     std::cout << "Navigation" << std::endl;

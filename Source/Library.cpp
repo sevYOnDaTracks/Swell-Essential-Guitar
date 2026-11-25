@@ -2,6 +2,7 @@
 #include "Dsp.h"
 #include <algorithm>
 #include <cmath>
+#include <map>
 
 namespace essential {
 using namespace juce;
@@ -179,12 +180,26 @@ std::unique_ptr<LoadedPreset> loadPreset(const PresetInfo& info, const std::func
 
     auto files = info.folder.findChildFiles(File::findFiles, false, audioPattern);
     files.sort();
+
+    // A folder may hold two different recordings (Guitar Solo also contains "Guitar Solo Suite_*",
+    // another DirectWave program with a brighter, quieter tone). Mixing them makes single notes stand out,
+    // so only the main recording (the most files) is kept; its neighbours fill the other notes.
+    std::map<String, int> prefixes;
+    auto prefixOf = [](const File& f) {
+        auto base = f.getFileNameWithoutExtension();
+        return base.upToLastOccurrenceOf("_", false, false).upToLastOccurrenceOf("_", false, false);
+    };
+    for (auto& f : files) if (! f.getFileName().startsWith(".")) ++prefixes[prefixOf(f)];
+    String mainPrefix;
+    int most = 0;
+    for (auto& [p, n] : prefixes) if (n > most) { most = n; mainPrefix = p; }
     AudioBuffer<float> temp;
     for (int fi = 0; fi < files.size(); ++fi) {
         auto& f = files.getReference(fi);
         if (progress != nullptr) progress->store((float) fi / (float) jmax(1, files.size()));
         if (cancel()) return {};
         if (f.getFileName().startsWith(".")) continue;
+        if (prefixOf(f) != mainPrefix) continue;
         if (badSamples.contains(info.key() + "/" + f.getFileNameWithoutExtension() + ".wav", true)) continue;
         int note = midiNoteFromFileName(f.getFileName());
         if (note < 0 || byNote[(size_t) note] >= 0) continue;
