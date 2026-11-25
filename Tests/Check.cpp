@@ -61,7 +61,7 @@ static Component* findByTitle(Component& root, const String& title)
 
 static void capture(AudioProcessorEditor& ed, const File& file)
 {
-    auto img = ed.createComponentSnapshot(ed.getLocalBounds(), true, 1.0f);
+    auto img = ed.createComponentSnapshot(ed.getLocalBounds(), true, 2.0f); // retina, for the shop visuals
     file.deleteFile();
     FileOutputStream out(file);
     PNGImageFormat().writeImageToStream(img, out);
@@ -348,6 +348,8 @@ int main(int argc, char* argv[])
     }
 
     std::cout << "Interface" << std::endl;
+    for (auto* prm : p.getParameters())               // captures show the factory settings
+        prm->setValueNotifyingHost(prm->getDefaultValue());
     p.toggleFavourite(2, 17);
     std::unique_ptr<AudioProcessorEditor> ed(p.createEditor());
     for (int c = 0; c < 6; ++c) {
