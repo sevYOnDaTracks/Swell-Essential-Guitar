@@ -1,0 +1,7 @@
+build/
+build-*/
+packaging/bank/
+*.log
+.DS_Store
+._*
+Assets/legacy-svg/._*

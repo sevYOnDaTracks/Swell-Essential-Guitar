@@ -1,0 +1,27 @@
+name: Windows
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configurer
+        run: cmake -S . -B build -A x64
+      - name: Compiler
+        run: cmake --build build --config Release --parallel 4 --target SwellEssentialGuitar_VST3 SwellEssentialGuitar_Standalone
+      - name: Empaqueter
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path package/Windows -Force
+          Copy-Item -Recurse "build/SwellEssentialGuitar_artefacts/Release/VST3/Swell Essential Guitar.vst3" package/Windows/
+          Copy-Item "build/SwellEssentialGuitar_artefacts/Release/Standalone/Swell Essential Guitar.exe" package/Windows/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Swell-Essential-Guitar-Windows
+          path: package/Windows
+          if-no-files-found: error
