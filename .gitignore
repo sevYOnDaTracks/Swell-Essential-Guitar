@@ -5,3 +5,6 @@ packaging/bank/
 .DS_Store
 ._*
 Assets/legacy-svg/._*
+
+# Captures produites par EGCheck (peuvent montrer la licence)
+ui-*.png

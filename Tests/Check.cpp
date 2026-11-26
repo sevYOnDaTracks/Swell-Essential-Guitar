@@ -258,6 +258,39 @@ int main(int argc, char* argv[])
         }
     }
 
+    {
+        // No late attacks: no sample keeps more than 2.5 ms after a stretch of near-silence (8 ms under -30 dB) before its attack.
+        // RNB Guitar, Mandolin, Archtop Me, Sunburst... started with up to 35 ms of string noise.
+        double worstMs = 0; String worst; std::vector<double> body;
+        for (auto& cat : p.catalog().categories)
+            for (auto& info : cat.presets) {
+                auto lp = loadPreset(info, [] { return false; });
+                if (lp == nullptr) continue;
+                for (auto& s : lp->samples) {
+                    auto level = [&](int i) { return jmax(std::abs((int) s.left[(size_t) i]), std::abs((int) s.right[(size_t) i])); };
+                    int peak = 0;
+                    for (int i = 0; i < s.frames; ++i) peak = jmax(peak, level(i));
+                    int attack = 0;
+                    while (attack < s.frames && level(attack) * 10 < peak) ++attack;
+                    body.push_back(1000.0 * attack / s.rate);
+                    // end of the last 8 ms (8 blocks of 1 ms) under -30 dB before the attack
+                    const int ms1 = (int) (s.rate * 0.001);
+                    std::vector<int> blk((size_t) (attack / ms1 + 1), 0);
+                    for (int i = 0; i < attack; ++i) blk[(size_t) (i / ms1)] = jmax(blk[(size_t) (i / ms1)], level(i));
+                    int quiet = 0, run = 0;
+                    for (int k = 0; k < (int) blk.size() - 1; ++k) {
+                        run = (double) blk[(size_t) k] < peak * 0.0316 ? run + 1 : 0;
+                        if (run >= 8) quiet = (k + 1) * ms1;
+                    }
+                    const double ms = 1000.0 * quiet / s.rate;
+                    if (ms > worstMs) { worstMs = ms; worst = info.key() + " (note " + String(s.root) + ")"; }
+                }
+            }
+        std::sort(body.begin(), body.end());
+        std::cout << "  attaque a 10 % : mediane " << String(body[body.size() / 2], 1) << " ms, pire " << String(body.back(), 1) << " ms" << std::endl;
+        expect(worstMs < 2.5, "pas de blanc avant l'attaque : pire " + String(worstMs, 2) + " ms, " + worst);
+    }
+
     std::cout << "Changement de preset sans coupure" << std::endl;
     {
         AudioBuffer<float> buf(2, 512); MidiBuffer on, none;

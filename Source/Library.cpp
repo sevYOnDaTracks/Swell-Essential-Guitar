@@ -2,6 +2,7 @@
 #include "Dsp.h"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <map>
 
 namespace essential {
@@ -208,9 +209,42 @@ std::unique_ptr<LoadedPreset> loadPreset(const PresetInfo& info, const std::func
         if (reader == nullptr || reader->lengthInSamples < 16 || reader->lengthInSamples > 44100 * 60 * 2)
             continue;
 
-        const int frames = (int) reader->lengthInSamples;
-        temp.setSize(2, frames, false, false, true);
-        if (! reader->read(&temp, 0, frames, 0, true, true)) continue; // mono files fill both channels
+        const int total = (int) reader->lengthInSamples;
+        temp.setSize(2, total, false, false, true);
+        if (! reader->read(&temp, 0, total, 0, true, true)) continue; // mono files fill both channels
+
+        // Many recordings start with a few ms (up to ~35 ms) of string noise before the pick hits the
+        // string: played live, the guitar feels late. The attack is found where the note first gets within
+        // 20 dB of its peak, then followed back while the level (max over 8 ms, so a low string's zero
+        // crossings don't count as silence) stays above -30 dB: string noise is dropped, a slow swell or a pick scratch is kept.
+        // The sample starts 1 ms before that, faded in so the cut never clicks.
+        const int skip = [&] {
+            auto* l = temp.getReadPointer(0);
+            auto* r = temp.getReadPointer(1);
+            const float peak = jmax(temp.getMagnitude(0, 0, total), temp.getMagnitude(1, 0, total));
+            if (peak <= 0.0f) return 0;
+            const int ms = jmax(1, (int) (reader->sampleRate * 0.001));
+            std::vector<float> block((size_t) (total / ms + 1), 0.0f); // peak of each 1 ms block
+            for (int i = 0; i < total; ++i) block[(size_t) (i / ms)] = jmax(block[(size_t) (i / ms)], std::abs(l[i]), std::abs(r[i]));
+            int attack = 0;
+            while (attack < (int) block.size() && block[(size_t) attack] < peak * 0.1f) ++attack;
+            int start = attack;
+            for (; start > 0; --start) {
+                float m = 0;
+                for (int k = jmax(0, start - 8); k < start; ++k) m = jmax(m, block[(size_t) k]);
+                if (m < peak * 0.0316f) break;
+            }
+            return jlimit(0, jmax(0, total - 16), (start - 1) * ms);
+        }();
+        const int frames = total - skip;
+        if (skip > 0) {
+            const int fade = jmin(frames, (int) (reader->sampleRate * 0.001) + 1);
+            for (int c = 0; c < 2; ++c) {
+                auto* d = temp.getWritePointer(c);
+                std::memmove(d, d + skip, sizeof(float) * (size_t) frames);
+                for (int i = 0; i < fade; ++i) d[i] *= (float) i / (float) fade;
+            }
+        }
 
         LoadedPreset::Sample s;
         s.rate = reader->sampleRate;
